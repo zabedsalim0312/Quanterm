@@ -1,10 +1,11 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import {
   AreaChart, Area, LineChart, Line, BarChart, Bar,
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell
 } from 'recharts';
-import { TrendingUp, TrendingDown, ArrowUpRight, ArrowDownRight, Search, RefreshCw } from 'lucide-react';
+import { ArrowUpRight, ArrowDownRight, Search, RefreshCw, Loader2 } from 'lucide-react';
+import api from './api';
 
 /* ── data ───────────────────────────────────────────────────────────────────── */
 const indices = [
@@ -84,6 +85,23 @@ const Markets = () => {
   const [search, setSearch]   = useState('');
   const [range,  setRange]    = useState('1M');
   const [lastUp, setLastUp]   = useState(Date.now());
+  const [quotes, setQuotes]   = useState([]);
+  const [quoteNotice, setQuoteNotice] = useState('');
+  const [loadingQuotes, setLoadingQuotes] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoadingQuotes(true);
+    api.get('/api/markets/quotes', { params: { symbols: 'AAPL,MSFT,GOOGL,AMZN' } })
+      .then((res) => {
+        if (cancelled) return;
+        setQuotes(res.data.quotes || []);
+        setQuoteNotice(res.data.notice || '');
+      })
+      .catch(() => { if (!cancelled) setQuoteNotice('Could not load live quotes'); })
+      .finally(() => { if (!cancelled) setLoadingQuotes(false); });
+    return () => { cancelled = true; };
+  }, [lastUp]);
 
   const filtered = topMovers.filter(s =>
     s.symbol.toLowerCase().includes(search.toLowerCase()) ||
@@ -91,11 +109,11 @@ const Markets = () => {
   );
 
   return (
-    <div className="flex-1 p-6 lg:p-10 overflow-y-auto">
+    <div className="flex-1 p-4 sm:p-6 lg:p-10 overflow-y-auto overflow-x-hidden min-w-0">
       {/* Header */}
-      <motion.header initial={{y:-20,opacity:0}} animate={{y:0,opacity:1}} className="flex justify-between items-center mb-8">
-        <div>
-          <h2 className="text-3xl font-bold text-white mb-1">Market Overview</h2>
+      <motion.header initial={{y:-20,opacity:0}} animate={{y:0,opacity:1}} className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4 mb-8">
+        <div className="min-w-0">
+          <h2 className="text-2xl sm:text-3xl font-bold text-white mb-1">Market Overview</h2>
           <p className="text-textMuted text-sm">Live indices · Sector performance · Top movers</p>
         </div>
         <button
@@ -108,7 +126,23 @@ const Markets = () => {
 
       {/* Index grid */}
       <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-4 mb-8">
-        {indices.map((idx, i) => <IndexCard key={idx.name} {...idx} />)}
+        {indices.map((idx) => <IndexCard key={idx.name} {...idx} />)}
+      </div>
+      <div className="glass-panel p-4 mb-6 min-w-0">
+        <div className="flex items-center gap-2 mb-3">
+          <h3 className="text-sm font-semibold text-white">Global quotes</h3>
+          {loadingQuotes && <Loader2 className="w-4 h-4 animate-spin text-textMuted" />}
+        </div>
+        {quoteNotice && <p className="text-xs text-amber-300 mb-2">{quoteNotice}</p>}
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          {quotes.map((q) => (
+            <div key={q.symbol} className="rounded-lg bg-white/5 p-3">
+              <p className="text-xs text-textMuted">{q.symbol}</p>
+              <p className="text-white font-semibold">${Number(q.price).toFixed(2)}</p>
+              <p className={`text-xs ${q.changePct >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>{q.changePct}%</p>
+            </div>
+          ))}
+        </div>
       </div>
 
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-6 mb-6">
@@ -116,12 +150,12 @@ const Markets = () => {
         <motion.div initial={{opacity:0,y:16}} animate={{opacity:1,y:0}} transition={{delay:.1}}
           className="xl:col-span-2 glass-panel p-6"
         >
-          <div className="flex justify-between items-center mb-4">
+          <div className="flex justify-between items-center mb-4 gap-2 flex-wrap">
             <div>
               <h3 className="text-lg font-semibold text-white">NIFTY 50</h3>
               <p className="text-textMuted text-xs">National Stock Exchange of India</p>
             </div>
-            <div className="flex gap-1">
+            <div className="flex gap-1 flex-wrap">
               {RANGES.map(r => (
                 <button key={r} onClick={() => setRange(r)}
                   className={`px-3 py-1 rounded-lg text-xs font-medium transition-colors ${
@@ -177,14 +211,14 @@ const Markets = () => {
 
       {/* Top Movers */}
       <motion.div initial={{opacity:0,y:16}} animate={{opacity:1,y:0}} transition={{delay:.3}} className="glass-panel p-6">
-        <div className="flex justify-between items-center mb-5">
+        <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3 mb-5">
           <h3 className="text-lg font-semibold text-white">Top Movers</h3>
-          <div className="relative">
+          <div className="relative w-full sm:w-auto">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-textMuted"/>
             <input
               value={search} onChange={e => setSearch(e.target.value)}
               placeholder="Search symbol…"
-              className="glass-input pl-9 py-1.5 text-sm w-48"
+              className="glass-input pl-9 py-1.5 text-sm w-full sm:w-48"
             />
           </div>
         </div>

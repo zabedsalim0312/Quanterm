@@ -92,10 +92,10 @@ const RiskAnalysis = () => {
   const [activeHolding, setActiveHolding] = useState(null);
 
   return (
-    <div className="flex-1 p-6 lg:p-10 overflow-y-auto">
+    <div className="flex-1 p-4 sm:p-6 lg:p-10 overflow-y-auto overflow-x-hidden min-w-0">
       {/* Header */}
       <motion.header initial={{y:-20,opacity:0}} animate={{y:0,opacity:1}} className="mb-8">
-        <h2 className="text-3xl font-bold text-white mb-1">Risk Analysis</h2>
+        <h2 className="text-2xl sm:text-3xl font-bold text-white mb-1">Risk Analysis</h2>
         <p className="text-textMuted text-sm">Portfolio risk score · VaR · Stress tests · Holdings breakdown</p>
       </motion.header>
 
@@ -161,7 +161,7 @@ const RiskAnalysis = () => {
           <h3 className="text-lg font-semibold text-white mb-5">Stress Test Scenarios</h3>
           <div className="space-y-3">
             {stressTests.map(s => (
-              <div key={s.scenario} className="flex items-center justify-between p-3 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 transition-colors">
+              <div key={s.scenario} className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 p-3 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 transition-colors min-w-0">
                 <div>
                   <p className="text-sm font-medium text-white">{s.scenario}</p>
                   <p className="text-xs text-textMuted mt-0.5">Recovery: {s.recovery}</p>

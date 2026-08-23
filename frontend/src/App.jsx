@@ -1,18 +1,29 @@
-import React, { useState, useEffect } from 'react';
-import { BrowserRouter as Router, Routes, Route, Link } from 'react-router-dom';
+import React, { useState, useEffect, Suspense, lazy } from 'react';
+import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import { 
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   PieChart, Pie, Cell
 } from 'recharts';
 import { 
   TrendingUp, Shield, PieChart as PieChartIcon, ArrowUpRight, 
-  ArrowDownRight, Activity, Bell, Settings as SettingsIcon, User, Wallet
+  ArrowDownRight, Bell, Settings as SettingsIcon, User, Wallet, Loader2
 } from 'lucide-react';
 import { motion } from 'framer-motion';
-import Auth from './Auth';
-import Settings from './Settings';
-import Markets from './Markets';
-import RiskAnalysis from './RiskAnalysis';
+import ErrorBoundary from './ErrorBoundary';
+import api from './api';
+
+const Auth = lazy(() => import('./Auth'));
+const Settings = lazy(() => import('./Settings'));
+const Markets = lazy(() => import('./Markets'));
+const RiskAnalysis = lazy(() => import('./RiskAnalysis'));
+const { VerifyEmail, ResetPassword } = lazy(() => import('./Auth'));
+const { Privacy, Terms } = lazy(() => import('./Legal'));
+
+const PageLoader = () => (
+  <div className="flex-1 flex items-center justify-center min-h-[40vh]">
+    <Loader2 className="w-8 h-8 animate-spin text-primary" />
+  </div>
+);
 
 // Mock Data
 const performanceData = [
@@ -38,19 +49,80 @@ const recentTrades = [
   { id: 3, symbol: 'MSFT', type: 'BUY', amount: '+2', price: '$330.00', time: '1d ago', status: 'completed' },
 ];
 
-const Dashboard = ({ handleLogout, userName, userEmail, onOpenSettings }) => {
+const Dashboard = ({ handleLogout, userName, onOpenSettings }) => {
   const [activePage, setActivePage] = useState('portfolio');
+  const [connecting, setConnecting] = useState(false);
+  const [notice, setNotice] = useState('');
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
+
+  const connectBroker = async () => {
+    setConnecting(true);
+    setNotice('');
+    try {
+      const res = await api.post('/api/portfolio/connect', { brokerName: 'Zerodha' });
+      setNotice(res.data.notice || 'Broker placeholder portfolio created.');
+    } catch (err) {
+      setNotice(err.response?.data?.message || 'Could not connect broker');
+    } finally {
+      setConnecting(false);
+    }
+  };
+
   return (
-    <div className="min-h-screen flex flex-col md:flex-row">
-      {/* Sidebar */}
+    <div className="min-h-screen flex flex-col md:flex-row overflow-x-hidden">
+      {/* Mobile header */}
+      <div className="md:hidden flex items-center justify-between p-4 glass-panel rounded-none border-l-0 border-t-0 border-r-0">
+        <div className="flex items-center gap-2">
+          <img src="/logo.png" alt="Quanterm Logo" className="h-8 w-auto object-contain rounded-lg bg-white p-0.5" />
+          <h1 className="text-lg font-bold bg-clip-text text-transparent bg-gradient-to-r from-white to-white/60">Quanterm</h1>
+        </div>
+        <button onClick={() => setMobileNavOpen(s => !s)} className="p-2 rounded-lg glass-button">
+          {mobileNavOpen ? 'Close' : 'Menu'}
+        </button>
+      </div>
+
+      {/* Mobile sidebar overlay */}
+      {mobileNavOpen && (
+        <div className="md:hidden fixed inset-0 bg-black/60 backdrop-blur-sm z-40" onClick={() => setMobileNavOpen(false)}>
+          <motion.aside
+            initial={{ x: -300 }}
+            animate={{ x: 0 }}
+            exit={{ x: -300 }}
+            transition={{ type: 'spring', damping: 28, stiffness: 260 }}
+            className="fixed left-0 top-0 h-full w-64 bg-[#0d1220] border-r border-white/10 shadow-2xl z-50 flex flex-col p-4"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center gap-3 mb-8">
+              <img src="/logo.png" alt="Quanterm Logo" className="h-10 w-auto object-contain rounded-lg bg-white p-1" />
+              <h1 className="text-xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-white to-white/60">Quanterm</h1>
+            </div>
+            <nav className="flex-1 space-y-2">
+              <NavItem icon={<PieChartIcon />} label="Portfolio X-Ray" active={activePage==='portfolio'} onClick={() => { setActivePage('portfolio'); setMobileNavOpen(false); }} />
+              <NavItem icon={<TrendingUp />}   label="Markets"         active={activePage==='markets'}   onClick={() => { setActivePage('markets'); setMobileNavOpen(false); }}   />
+              <NavItem icon={<Wallet />}        label="Brokers"         active={activePage==='brokers'}   onClick={() => { setActivePage('brokers'); setMobileNavOpen(false); }}   />
+              <NavItem icon={<Shield />}        label="Risk Analysis"   active={activePage==='risk'}      onClick={() => { setActivePage('risk'); setMobileNavOpen(false); }}      />
+            </nav>
+            <div className="mt-auto space-y-2">
+              <NavItem icon={<SettingsIcon />} label="Settings" onClick={() => { onOpenSettings(); setMobileNavOpen(false); }} />
+              <NavItem icon={<User />} label="Profile" onClick={() => { onOpenSettings(); setMobileNavOpen(false); }} />
+              <button onClick={handleLogout} className="w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-300 text-red-400 hover:text-red-300 hover:bg-red-500/10">
+                <User className="w-5 h-5" />
+                <span className="font-medium">Logout</span>
+              </button>
+            </div>
+          </motion.aside>
+        </div>
+      )}
+
+      {/* Desktop sidebar */}
       <motion.aside 
         initial={{ x: -100, opacity: 0 }}
         animate={{ x: 0, opacity: 1 }}
-        className="w-full md:w-64 glass-panel border-l-0 border-t-0 border-b-0 rounded-none p-6 flex flex-col"
+        className="hidden md:flex md:w-64 md:min-h-screen glass-panel border-l-0 border-t-0 border-b-0 rounded-none p-4 sm:p-6 flex-col min-w-0"
       >
         <div className="flex items-center gap-3 mb-12">
           <img src="/logo.png" alt="Quanterm Logo" className="h-10 w-auto object-contain rounded-lg bg-white p-1" />
-          <h1 className="text-2xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-white to-white/60">
+          <h1 className="text-xl sm:text-2xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-white to-white/60">
             Quanterm
           </h1>
         </div>
@@ -73,30 +145,34 @@ const Dashboard = ({ handleLogout, userName, userEmail, onOpenSettings }) => {
       </motion.aside>
 
       {/* Main Content — routed */}
+      <Suspense fallback={<PageLoader />}>
       {activePage === 'markets' && <Markets />}
       {activePage === 'risk'    && <RiskAnalysis />}
+      </Suspense>
       {(activePage === 'portfolio' || activePage === 'brokers') && (
-        <main className="flex-1 p-6 lg:p-10 overflow-y-auto">
-        <header className="flex justify-between items-center mb-10">
+        <main className="flex-1 p-4 sm:p-6 lg:p-10 overflow-y-auto min-w-0">
+        <header className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4 mb-8">
           <motion.div 
             initial={{ y: -20, opacity: 0 }}
             animate={{ y: 0, opacity: 1 }}
           >
-            <h2 className="text-3xl font-bold text-white mb-1">Portfolio Intelligence</h2>
-            <p className="text-textMuted">Welcome back, <span className="text-white font-medium">{userName || 'there'}</span>. Here's your unified view.</p>
+            <h2 className="text-2xl sm:text-3xl font-bold text-white mb-1 break-words">Portfolio Intelligence</h2>
+            <p className="text-textMuted text-sm sm:text-base">Welcome back, <span className="text-white font-medium">{userName || 'there'}</span>. Here's your unified view.</p>
           </motion.div>
           
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-3 shrink-0">
             <button className="p-2.5 rounded-full glass-button relative">
               <Bell className="w-5 h-5 text-white/80" />
               <span className="absolute top-2 right-2 w-2 h-2 bg-red-500 rounded-full"></span>
             </button>
-            <button className="glass-button flex items-center gap-2 font-medium">
-              <Wallet className="w-4 h-4" />
+            <button onClick={connectBroker} disabled={connecting} className="glass-button flex items-center gap-2 font-medium text-sm">
+              {connecting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Wallet className="w-4 h-4" />}
               Connect Broker
             </button>
           </div>
         </header>
+        {notice && <p className="mb-4 text-xs sm:text-sm text-amber-300">{notice}</p>}
+        <p className="mb-6 text-[11px] sm:text-xs text-textMuted">Analytics only — not investment advice. Market data may be delayed. NSE/BSE redistribution requires a licence.</p>
 
         {/* Stats Grid */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
@@ -291,7 +367,7 @@ const StatCard = ({ title, value, trend, isPositive, delay, neutral }) => (
     
     <div className="relative z-10">
       <h4 className="text-textMuted text-sm font-medium mb-2">{title}</h4>
-      <div className="text-3xl font-bold text-white mb-3">{value}</div>
+      <div className="text-2xl sm:text-3xl font-bold text-white mb-3 break-words">{value}</div>
       <div className="flex items-center gap-2">
         <span className={`flex items-center text-sm font-medium ${
           neutral ? 'text-white/60' : isPositive ? 'text-emerald-400' : 'text-red-400'
@@ -306,57 +382,63 @@ const StatCard = ({ title, value, trend, isPositive, delay, neutral }) => (
 );
 
 function App() {
-  const [authToken, setAuthToken]       = useState(localStorage.getItem('token'));
-  const [userName,  setUserName]        = useState(localStorage.getItem('userName'));
+  const [user, setUser] = useState(null);
+  const [booting, setBooting] = useState(true);
   const [settingsOpen, setSettingsOpen] = useState(false);
 
-  // Allow Settings panel to update the displayed name live
   useEffect(() => {
-    const sync = () => setUserName(localStorage.getItem('userName'));
-    window.addEventListener('userNameUpdated', sync);
-    return () => window.removeEventListener('userNameUpdated', sync);
+    let cancelled = false;
+    api.get('/api/auth/me')
+      .then((res) => { if (!cancelled) setUser(res.data.user); })
+      .catch(() => { if (!cancelled) setUser(null); })
+      .finally(() => { if (!cancelled) setBooting(false); });
+    return () => { cancelled = true; };
   }, []);
 
-  const handleLogout = () => {
-    localStorage.removeItem('token');
-    localStorage.removeItem('userName');
-    setAuthToken(null);
-    setUserName(null);
+  const handleLogout = async () => {
+    try { await api.post('/api/auth/logout'); } catch { /* ignore */ }
+    setUser(null);
   };
 
-  const handleAuth = (token) => {
-    setAuthToken(token);
-    setUserName(localStorage.getItem('userName'));
-  };
+  const mergeUser = (partial) => setUser((prev) => ({ ...prev, ...partial }));
+
+  if (booting) return <PageLoader />;
 
   return (
+    <ErrorBoundary>
     <Router>
       <Routes>
+        <Route path="/privacy" element={<Privacy />} />
+        <Route path="/terms" element={<Terms />} />
+        <Route path="/verify-email" element={<VerifyEmail />} />
+        <Route path="/reset-password" element={<ResetPassword />} />
         <Route 
           path="/" 
           element={
-            authToken
+            user
               ? (
                 <>
                   <Dashboard
                     handleLogout={handleLogout}
-                    userName={userName}
-                    userEmail={localStorage.getItem('userEmail') || ''}
+                    userName={user.name}
                     onOpenSettings={() => setSettingsOpen(true)}
                   />
-                  <Settings
-                    isOpen={settingsOpen}
-                    onClose={() => setSettingsOpen(false)}
-                    userName={userName}
-                    userEmail={localStorage.getItem('userEmail') || ''}
-                  />
+                  <Suspense fallback={null}>
+                    <Settings
+                      isOpen={settingsOpen}
+                      onClose={() => setSettingsOpen(false)}
+                      user={user}
+                      onUserUpdate={mergeUser}
+                    />
+                  </Suspense>
                 </>
               )
-              : <Auth setAuthToken={handleAuth} />
+              : <Suspense fallback={<PageLoader />}><Auth setUser={setUser} /></Suspense>
           } 
         />
       </Routes>
     </Router>
+    </ErrorBoundary>
   );
 }
 

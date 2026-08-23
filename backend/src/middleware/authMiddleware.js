@@ -1,18 +1,23 @@
-const jwt = require('jsonwebtoken');
+const { verifyToken } = require('../lib/tokens');
 
 const authenticate = (req, res, next) => {
-  const token = req.header('Authorization')?.split(' ')[1];
-  
+  const cookieToken = req.cookies?.access_token;
+  const headerToken = req.header('Authorization')?.split(' ')[1];
+  const token = cookieToken || headerToken;
+
   if (!token) {
     return res.status(401).json({ message: 'Access denied. No token provided.' });
   }
 
   try {
-    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'supersecretjwtkey_for_beta');
+    const decoded = verifyToken(token);
+    if (decoded.purpose && decoded.purpose !== 'access') {
+      return res.status(401).json({ message: 'Invalid token.' });
+    }
     req.user = decoded;
     next();
-  } catch (error) {
-    res.status(400).json({ message: 'Invalid token.' });
+  } catch {
+    res.status(401).json({ message: 'Invalid or expired token.' });
   }
 };
 

@@ -2,8 +2,9 @@ import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   X, User, Bell, Shield, Palette, Save, Eye, EyeOff,
-  ChevronRight, Check, Moon, Sun, Monitor
+  Check, Moon, Sun, Monitor
 } from 'lucide-react';
+import api from './api';
 
 const TABS = [
   { id: 'profile',       label: 'Profile',       icon: User },
@@ -56,17 +57,23 @@ const SavedBadge = ({ show }) => (
 );
 
 /* ─── tab panels ────────────────────────────────────────────────────────────── */
-const ProfileTab = ({ userName, userEmail }) => {
+const ProfileTab = ({ userName, userEmail, timezone: initialTz, onUserUpdate }) => {
   const [name, setName] = useState(userName || '');
   const [email, setEmail] = useState(userEmail || '');
+  const [timezone, setTimezone] = useState(initialTz || 'Asia/Kolkata');
   const [saved, setSaved] = useState(false);
+  const [error, setError] = useState('');
 
-  const handleSave = () => {
-    localStorage.setItem('userName', name);
-    // Dispatch a storage event so App.jsx re-reads the name
-    window.dispatchEvent(new Event('userNameUpdated'));
-    setSaved(true);
-    setTimeout(() => setSaved(false), 2500);
+  const handleSave = async () => {
+    setError('');
+    try {
+      const res = await api.put('/api/settings', { name, timezone });
+      onUserUpdate?.(res.data);
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2500);
+    } catch (err) {
+      setError(err.response?.data?.message || 'Could not save profile');
+    }
   };
 
   return (
@@ -104,13 +111,14 @@ const ProfileTab = ({ userName, userEmail }) => {
       </Field>
 
       <Field label="Timezone">
-        <select className="glass-input">
+        <select className="glass-input" value={timezone} onChange={(e) => setTimezone(e.target.value)}>
           <option value="Asia/Kolkata">Asia/Kolkata (IST +05:30)</option>
           <option value="America/New_York">America/New_York (EST)</option>
           <option value="Europe/London">Europe/London (GMT)</option>
           <option value="Asia/Singapore">Asia/Singapore (SGT)</option>
         </select>
       </Field>
+      {error && <p className="text-xs text-red-400">{error}</p>}
 
       <div className="flex items-center justify-between pt-2">
         <SavedBadge show={saved} />
@@ -125,7 +133,7 @@ const ProfileTab = ({ userName, userEmail }) => {
   );
 };
 
-const NotificationsTab = () => {
+const NotificationsTab = ({ settings, onUserUpdate }) => {
   const [prefs, setPrefs] = useState({
     priceAlerts:    true,
     portfolioDaily: true,
@@ -133,12 +141,15 @@ const NotificationsTab = () => {
     tradeConfirm:   true,
     riskWarnings:   true,
     weeklyReport:   false,
+    ...(settings?.notifications || {}),
   });
   const [saved, setSaved] = useState(false);
 
   const toggle = key => setPrefs(p => ({ ...p, [key]: !p[key] }));
 
-  const handleSave = () => {
+  const handleSave = async () => {
+    const res = await api.put('/api/settings', { settings: { ...settings, notifications: prefs } });
+    onUserUpdate?.(res.data);
     setSaved(true);
     setTimeout(() => setSaved(false), 2500);
   };
@@ -186,28 +197,66 @@ const NotificationsTab = () => {
   );
 };
 
-const SecurityTab = () => {
+const SecurityTab = ({ twoFactorEnabled, onUserUpdate }) => {
   const [current, setCurrent] = useState('');
   const [newPwd,  setNewPwd]  = useState('');
   const [confirm, setConfirm] = useState('');
   const [show,    setShow]    = useState(false);
-  const [twoFA,   setTwoFA]   = useState(false);
+  const [twoFA,   setTwoFA]   = useState(!!twoFactorEnabled);
+  const [secret,  setSecret]  = useState('');
+  const [totp,    setTotp]    = useState('');
   const [saved,   setSaved]   = useState(false);
   const [error,   setError]   = useState('');
 
-  const handleSave = () => {
-    if (newPwd && newPwd !== confirm) {
-      setError('New passwords do not match.');
-      return;
-    }
-    if (newPwd && newPwd.length < 6) {
-      setError('Password must be at least 6 characters.');
-      return;
-    }
+  const handleSave = async () => {
     setError('');
+    if (newPwd) {
+      if (newPwd !== confirm) {
+        setError('New passwords do not match.');
+        return;
+      }
+      if (newPwd.length < 8) {
+        setError('Password must be at least 8 characters.');
+        return;
+      }
+      try {
+        await api.post('/api/auth/change-password', { currentPassword: current, newPassword: newPwd });
+      } catch (err) {
+        setError(err.response?.data?.message || 'Password update failed');
+        return;
+      }
+    }
     setSaved(true);
     setCurrent(''); setNewPwd(''); setConfirm('');
     setTimeout(() => setSaved(false), 2500);
+  };
+
+  const start2fa = async () => {
+    const res = await api.post('/api/auth/2fa/setup');
+    setSecret(res.data.secret);
+    setTwoFA(true);
+  };
+
+  const enable2fa = async () => {
+    try {
+      await api.post('/api/auth/2fa/enable', { totp });
+      onUserUpdate?.({ twoFactorEnabled: true });
+      setSecret('');
+      setTotp('');
+      setSaved(true);
+    } catch (err) {
+      setError(err.response?.data?.message || 'Could not enable 2FA');
+    }
+  };
+
+  const disable2fa = async () => {
+    try {
+      await api.post('/api/auth/2fa/disable', { password: current, totp });
+      setTwoFA(false);
+      onUserUpdate?.({ twoFactorEnabled: false });
+    } catch (err) {
+      setError(err.response?.data?.message || 'Could not disable 2FA');
+    }
   };
 
   return (
@@ -246,8 +295,16 @@ const SecurityTab = () => {
           <p className="text-sm font-medium text-white">Enable 2FA</p>
           <p className="text-xs text-textMuted mt-0.5">Add an extra layer of security to your account</p>
         </div>
-        <Toggle checked={twoFA} onChange={setTwoFA} />
+        <Toggle checked={twoFA} onChange={(on) => on ? start2fa() : disable2fa()} />
       </div>
+      {secret && (
+        <div className="p-4 rounded-xl bg-white/5 border border-white/10 space-y-2">
+          <p className="text-xs text-textMuted">Add this secret in your authenticator app, then enter a code.</p>
+          <p className="font-mono text-sm text-white break-all">{secret}</p>
+          <input className="glass-input" placeholder="000000" value={totp} onChange={(e) => setTotp(e.target.value)} />
+          <button onClick={enable2fa} className="text-sm text-primary">Confirm 2FA</button>
+        </div>
+      )}
 
       <SectionTitle>Active Sessions</SectionTitle>
       <div className="space-y-2">
@@ -283,11 +340,12 @@ const SecurityTab = () => {
   );
 };
 
-const AppearanceTab = () => {
-  const [theme, setTheme]           = useState('dark');
-  const [accent, setAccent]         = useState('#3B82F6');
-  const [compactMode, setCompact]   = useState(false);
-  const [animations, setAnimations] = useState(true);
+const AppearanceTab = ({ settings, onUserUpdate }) => {
+  const appearance = settings?.appearance || {};
+  const [theme, setTheme]           = useState(appearance.theme || 'dark');
+  const [accent, setAccent]         = useState(appearance.accent || '#3B82F6');
+  const [compactMode, setCompact]   = useState(!!appearance.compactMode);
+  const [animations, setAnimations] = useState(appearance.animations !== false);
   const [saved, setSaved]           = useState(false);
 
   const themes  = [
@@ -297,7 +355,11 @@ const AppearanceTab = () => {
   ];
   const accents = ['#3B82F6', '#10B981', '#8B5CF6', '#F59E0B', '#EF4444', '#EC4899'];
 
-  const handleSave = () => {
+  const handleSave = async () => {
+    const res = await api.put('/api/settings', {
+      settings: { ...settings, appearance: { theme, accent, compactMode, animations } },
+    });
+    onUserUpdate?.(res.data);
     setSaved(true);
     setTimeout(() => setSaved(false), 2500);
   };
@@ -366,8 +428,10 @@ const AppearanceTab = () => {
 };
 
 /* ─── main drawer ───────────────────────────────────────────────────────────── */
-const Settings = ({ isOpen, onClose, userName, userEmail }) => {
+const Settings = ({ isOpen, onClose, user, onUserUpdate }) => {
   const [activeTab, setActiveTab] = useState('profile');
+  const userName = user?.name;
+  const userEmail = user?.email;
 
   // Close on Escape
   useEffect(() => {
@@ -377,10 +441,10 @@ const Settings = ({ isOpen, onClose, userName, userEmail }) => {
   }, [onClose]);
 
   const panels = {
-    profile:       <ProfileTab userName={userName} userEmail={userEmail} />,
-    notifications: <NotificationsTab />,
-    security:      <SecurityTab />,
-    appearance:    <AppearanceTab />,
+    profile:       <ProfileTab userName={userName} userEmail={userEmail} timezone={user?.timezone} onUserUpdate={onUserUpdate} />,
+    notifications: <NotificationsTab settings={user?.settings} onUserUpdate={onUserUpdate} />,
+    security:      <SecurityTab twoFactorEnabled={user?.twoFactorEnabled} onUserUpdate={onUserUpdate} />,
+    appearance:    <AppearanceTab settings={user?.settings} onUserUpdate={onUserUpdate} />,
   };
 
   return (
@@ -402,7 +466,7 @@ const Settings = ({ isOpen, onClose, userName, userEmail }) => {
             animate={{ x: 0 }}
             exit={{ x: '100%' }}
             transition={{ type: 'spring', damping: 28, stiffness: 260 }}
-            className="fixed right-0 top-0 h-full w-full max-w-lg bg-[#0d1220] border-l border-white/10 shadow-2xl z-50 flex flex-col"
+            className="fixed right-0 top-0 h-full w-full max-w-lg bg-[#0d1220] border-l border-white/10 shadow-2xl z-50 flex flex-col min-w-0"
           >
             {/* Header */}
             <div className="flex items-center justify-between px-6 py-5 border-b border-white/10">
@@ -415,9 +479,9 @@ const Settings = ({ isOpen, onClose, userName, userEmail }) => {
               </button>
             </div>
 
-            <div className="flex flex-1 overflow-hidden">
+            <div className="flex flex-1 overflow-hidden flex-col sm:flex-row">
               {/* Sidebar tabs */}
-              <nav className="w-44 border-r border-white/10 py-4 px-3 space-y-1 shrink-0">
+              <nav className="w-full sm:w-44 border-b sm:border-b-0 sm:border-r border-white/10 py-2 sm:py-4 px-3 flex sm:block gap-1 overflow-x-auto shrink-0">
                 {TABS.map(({ id, label, icon: Icon }) => (
                   <button
                     key={id}

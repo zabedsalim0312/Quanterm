@@ -16,8 +16,10 @@ const Auth = lazy(() => import('./Auth'));
 const Settings = lazy(() => import('./Settings'));
 const Markets = lazy(() => import('./Markets'));
 const RiskAnalysis = lazy(() => import('./RiskAnalysis'));
-const { VerifyEmail, ResetPassword } = lazy(() => import('./Auth'));
-const { Privacy, Terms } = lazy(() => import('./Legal'));
+const VerifyEmail = lazy(() => import('./Auth').then((m) => ({ default: m.VerifyEmail })));
+const ResetPassword = lazy(() => import('./Auth').then((m) => ({ default: m.ResetPassword })));
+const Privacy = lazy(() => import('./Legal').then((m) => ({ default: m.Privacy })));
+const Terms = lazy(() => import('./Legal').then((m) => ({ default: m.Terms })));
 
 const PageLoader = () => (
   <div className="flex-1 flex items-center justify-center min-h-[40vh]">
@@ -408,10 +410,10 @@ function App() {
     <ErrorBoundary>
     <Router>
       <Routes>
-        <Route path="/privacy" element={<Privacy />} />
-        <Route path="/terms" element={<Terms />} />
-        <Route path="/verify-email" element={<VerifyEmail />} />
-        <Route path="/reset-password" element={<ResetPassword />} />
+        <Route path="/privacy" element={<Suspense fallback={<PageLoader />}><Privacy /></Suspense>} />
+        <Route path="/terms" element={<Suspense fallback={<PageLoader />}><Terms /></Suspense>} />
+        <Route path="/verify-email" element={<Suspense fallback={<PageLoader />}><VerifyEmail /></Suspense>} />
+        <Route path="/reset-password" element={<Suspense fallback={<PageLoader />}><ResetPassword /></Suspense>} />
         <Route 
           path="/" 
           element={
